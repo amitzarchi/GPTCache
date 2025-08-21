@@ -269,7 +269,6 @@ class QualityScoreEviction(EvictionBase):
         num_to_evict = min(self.clean_size, len(self.entries) - self.maxsize + self.clean_size)
         items_to_evict = scored_entries[:num_to_evict]
         
-        print(f"🔧 DEBUG: About to evict {num_to_evict} items from Quality Score policy")
         
         # Remove evicted items
         evicted_ids = []
@@ -289,10 +288,7 @@ class QualityScoreEviction(EvictionBase):
             )
         
         if evicted_ids and self.on_evict:
-            print(f"🔧 DEBUG: Calling on_evict callback with {evicted_ids}")
             self.on_evict(evicted_ids)
-        else:
-            print(f"🔧 DEBUG: NOT calling on_evict - evicted_ids: {evicted_ids}, callback: {self.on_evict}")
             
         gptcache_log.info(f"Evicted {len(evicted_ids)} items, cache size now: {len(self.entries)}")
     
