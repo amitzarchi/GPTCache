@@ -240,6 +240,10 @@ class SSDataManager(DataManager):
                              clean_size=clean_size,
                              policy=policy,
                              on_evict=self._clear)
+        else:
+            # Ensure custom eviction policies have the proper callback
+            if hasattr(e, 'on_evict') and e.on_evict is None:
+                e.on_evict = self._clear
         self.eviction_base = e
 
         if not isinstance(self.eviction_base, NoOpEviction):
@@ -248,8 +252,9 @@ class SSDataManager(DataManager):
 
     def _clear(self, marked_keys):
         self.eviction_manager.soft_evict(marked_keys)
-        if self.eviction_manager.check_evict():
-            self.eviction_manager.delete()
+        # Force immediate deletion for demonstration purposes
+        # (normally this would wait for thresholds to be met)
+        self.eviction_manager.delete()
 
     def save(self, question, answer, embedding_data, **kwargs):
         """Save the data and vectors to cache and vector storage.
@@ -363,7 +368,12 @@ class SSDataManager(DataManager):
                 ans.answer = self.o.get(ans.answer)
         return cache_data
 
-    def hit_cache_callback(self, res_data, **kwargs):
+    def hit_cache_callback(self, res_data, similarity_score=None, **kwargs):
+        # Update quality score if provided (for quality-aware eviction policies)
+        if similarity_score is not None and hasattr(self.eviction_base, 'update_quality'):
+            self.eviction_base.update_quality(res_data[1], similarity_score)
+        
+        # Standard access tracking
         self.eviction_base.get(res_data[1])
 
     def search(self, embedding_data, **kwargs):
