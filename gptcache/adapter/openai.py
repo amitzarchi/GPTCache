@@ -70,7 +70,7 @@ class ChatCompletion(openai.ChatCompletion, BaseCacheLLM):
         print("="*60)
         print("mockup call for openai")
         print("="*60)
-        time.sleep(5)
+        time.sleep(1.5)
         mock_response = {
             "id": "chatcmpl-mock-001",
             "object": "chat.completion",
