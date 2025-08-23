@@ -42,6 +42,8 @@ cache.init(
     embedding_func=Onnx().to_embeddings,
     similarity_evaluation=SearchDistanceEvaluation()
 )
+
+os.environ['OPENAI_API_KEY'] = 'mockup'
 cache.set_openai_key()
 print("✅ Cache initialized with Quality Score Eviction (maxsize=4)")
 

@@ -65,6 +65,36 @@ class ChatCompletion(openai.ChatCompletion, BaseCacheLLM):
             raise wrap_error(e) from e
 
     @classmethod
+    def _llm_handler_mockup(cls, *llm_args, **llm_kwargs):
+        import time
+        print("="*60)
+        print("mockup call for openai")
+        print("="*60)
+        time.sleep(5)
+        mock_response = {
+            "id": "chatcmpl-mock-001",
+            "object": "chat.completion",
+            "created": 1699999999,
+            "model": "gpt-4o-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello! How can I help you today?"
+                    },
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 8,
+                "total_tokens": 20
+            }
+        }
+        return mock_response
+
+    @classmethod
     async def _allm_handler(cls, *llm_args, **llm_kwargs):
         try:
             return (
@@ -122,6 +152,15 @@ class ChatCompletion(openai.ChatCompletion, BaseCacheLLM):
             return _construct_resp_from_cache(cache_data, saved_token)
 
         kwargs = cls.fill_base_args(**kwargs)
+        if os.environ['OPENAI_API_KEY'] == "mockup":
+            return adapt(
+                cls._llm_handler_mockup,
+                cache_data_convert,
+                cls._update_cache_callback,
+                *args,
+                **kwargs,
+            )
+
         return adapt(
             cls._llm_handler,
             cache_data_convert,

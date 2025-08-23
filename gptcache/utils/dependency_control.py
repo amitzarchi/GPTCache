@@ -18,3 +18,5 @@ def prompt_install(package: str, warn: bool = False):  # pragma: no cover
         gptcache_log.info("%s installed successfully!", package)
     except subprocess.CalledProcessError as e:
         raise PipInstallError(package) from e
+
+
