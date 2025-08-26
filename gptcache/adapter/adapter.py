@@ -174,7 +174,7 @@ def adapt(llm_handler, cache_data_convert, update_cache_callback, *args, **kwarg
                 cache_answers.append(
                     (float(rank), cache_data.answers[0].answer, search_data, cache_data)
                 )
-                chat_cache.data_manager.hit_cache_callback(search_data)
+                chat_cache.data_manager.hit_cache_callback(search_data, similarity_score=float(rank))
         cache_answers = sorted(cache_answers, key=lambda x: x[0], reverse=True)
         answers_dict = dict((d[1], d) for d in cache_answers)
         if len(cache_answers) != 0:
@@ -440,7 +440,7 @@ async def aadapt(
                 cache_answers.append(
                     (float(rank), cache_data.answers[0].answer, search_data, cache_data)
                 )
-                chat_cache.data_manager.hit_cache_callback(search_data)
+                chat_cache.data_manager.hit_cache_callback(search_data, similarity_score=float(rank))
         cache_answers = sorted(cache_answers, key=lambda x: x[0], reverse=True)
         answers_dict = dict((d[1], d) for d in cache_answers)
         if len(cache_answers) != 0:
