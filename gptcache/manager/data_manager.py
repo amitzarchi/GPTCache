@@ -363,7 +363,9 @@ class SSDataManager(DataManager):
                 ans.answer = self.o.get(ans.answer)
         return cache_data
 
-    def hit_cache_callback(self, res_data, **kwargs):
+    def hit_cache_callback(self, res_data, similarity_score=None, **kwargs):
+        if similarity_score is not None and hasattr(self.eviction_base, "update_quality"):
+            self.eviction_base.update_quality(res_data[1], similarity_score)
         self.eviction_base.get(res_data[1])
 
     def search(self, embedding_data, **kwargs):
