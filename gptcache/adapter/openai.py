@@ -69,7 +69,6 @@ class ChatCompletion(openai.ChatCompletion, BaseCacheLLM):
         import time
         print("="*60)
         print("mockup call for openai")
-        print("="*60)
         time.sleep(1.5)
         mock_response = {
             "id": "chatcmpl-mock-001",

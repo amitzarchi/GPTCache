@@ -1,0 +1,22 @@
+{
+  "quality_score": {
+    "eviction_policy": "quality_score",
+    "total_requests": 999,
+    "cache_hits_positive": 2,
+    "cache_hits_negative": 997,
+    "fail_count": 0,
+    "average_latency_ms": 1647.4764974744949,
+    "total_time_seconds": 1645.8290209770203,
+    "average_embedding_time_ms": 209.2,
+    "average_search_time_ms": 7.2,
+    "cache_hit_rate_percent": 0.20020020020020018,
+    "throughput_rps": 0.6069300680914037,
+    "cpu_utilization": {
+      "mean": 25.051128683427955,
+      "p95": 90.7,
+      "p99": 97.8,
+      "max": 100.0,
+      "samples": 14796
+    }
+  }
+}

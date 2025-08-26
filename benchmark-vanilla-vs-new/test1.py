@@ -70,7 +70,7 @@ def run():
         embedding_func=embedding_onnx.to_embeddings,
         data_manager=data_manager,
         similarity_evaluation=WrapEvaluation(),
-        config=Config(similarity_threshold=0.95),
+        config=Config(similarity_threshold=0.9),
     )
 
     with open(r"C:\Users\yossi_1wprdhx\Desktop\llmcache\GPTCache\examples\benchmark\mock_data.json", "r") as mock_file:
