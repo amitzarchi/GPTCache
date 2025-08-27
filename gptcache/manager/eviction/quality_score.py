@@ -56,7 +56,7 @@ class QualityScoreEviction(EvictionBase):
         self,
         maxsize: int = 1000,
         clean_size: int = None,
-        learning_rate: float = 0.1,
+        learning_rate: float = 0.3,
         quality_weight: float = 0.6,
         recency_weight: float = 0.3,
         frequency_weight: float = 0.1,
@@ -174,7 +174,6 @@ class QualityScoreEviction(EvictionBase):
         """
         with self._lock:
             if obj not in self.entries:
-                gptcache_log.warning(f"Attempted to update quality for non-existent object: {obj}")
                 return
                 
             entry = self.entries[obj]
@@ -268,9 +267,7 @@ class QualityScoreEviction(EvictionBase):
         # Determine how many items to evict
         num_to_evict = min(self.clean_size, len(self.entries) - self.maxsize + self.clean_size)
         items_to_evict = scored_entries[:num_to_evict]
-        
-        print(f"🔧 DEBUG: About to evict {num_to_evict} items from Quality Score policy")
-        
+                
         # Remove evicted items
         evicted_ids = []
         for score, obj_id, entry in items_to_evict:
@@ -289,10 +286,7 @@ class QualityScoreEviction(EvictionBase):
             )
         
         if evicted_ids and self.on_evict:
-            print(f"🔧 DEBUG: Calling on_evict callback with {evicted_ids}")
             self.on_evict(evicted_ids)
-        else:
-            print(f"🔧 DEBUG: NOT calling on_evict - evicted_ids: {evicted_ids}, callback: {self.on_evict}")
             
         gptcache_log.info(f"Evicted {len(evicted_ids)} items, cache size now: {len(self.entries)}")
     
@@ -314,7 +308,9 @@ class QualityScoreEviction(EvictionBase):
                     'max_size': self.maxsize,
                     'avg_quality': 0.0,
                     'avg_access_count': 0.0,
-                    'total_accesses': self.stats['total_accesses']
+                    'total_accesses': self.stats['total_accesses'],
+                    'weights': self.weights.copy(),
+                    'learning_rate': self.learning_rate
                 }
                 
             qualities = [entry.quality_score for entry in self.entries.values()]
