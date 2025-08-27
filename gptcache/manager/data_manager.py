@@ -240,6 +240,10 @@ class SSDataManager(DataManager):
                              clean_size=clean_size,
                              policy=policy,
                              on_evict=self._clear)
+        else:
+            # Set the on_evict callback for existing eviction base
+            if hasattr(e, 'on_evict') and e.on_evict is None:
+                e.on_evict = self._clear
         self.eviction_base = e
 
         if not isinstance(self.eviction_base, NoOpEviction):
