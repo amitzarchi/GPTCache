@@ -64,3 +64,9 @@ class MemoryCacheEviction(EvictionBase):
     @property
     def policy(self) -> str:
         return self._policy
+
+    def get_stats(self):
+        return {
+            'policy': self._policy,
+            'max_size': self._cache.maxsize,
+        }
