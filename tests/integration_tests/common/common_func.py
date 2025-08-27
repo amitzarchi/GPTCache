@@ -1,5 +1,6 @@
 """" Methods of processing data """
 import os
+import time
 from common import common_type as ct
 from utils.util_log import test_log as log
 
@@ -31,3 +32,25 @@ def disable_cache(*args, **kwargs):
     disable cache
     """
     return False
+
+def mock_chat_completion(*args, **kwargs):
+    """Mock LLM: returns a simple echo-style response instantly."""
+    messages = kwargs.get("messages", [])
+    user_content = ""
+    for m in reversed(messages):
+        if isinstance(m, dict) and m.get("role") == "user":
+            user_content = m.get("content", "")
+            break
+    content = f"[MOCK] Answer to: {user_content}" if user_content else "[MOCK] Hello."
+    return {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "created": int(time.time()),
+        "usage": {"completion_tokens": 0, "prompt_tokens": 0, "total_tokens": 0},
+        "object": "chat.completion",
+    }
