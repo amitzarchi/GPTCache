@@ -1,9 +1,8 @@
-import json
-import uuid
 import os
-import sqlite3
+import uuid
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import multiprocessing as mp
-import itertools
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from test import test
 from question_sampler import sample_questions
@@ -15,7 +14,7 @@ QUESTION_CONFIGS = [
     ('MIXED', 500), ('MIXED', 1000), ('MIXED', 3000),
 ]
 
-QUALITY_WEIGHTS = [(0.6, 0.3, 0.1)]
+QUALITY_WEIGHTS = [(0.6, 0.3, 0.1), (0.8, 0.1, 0.1)]
 LEARNING_RATES = [0.3, 0.5, 0.7]
 MEMORY_POLICIES = ['LRU', 'LFU', 'FIFO', 'RR']
 MAX_SIZES_FOR_NUM_QUESTIONS = {
@@ -25,45 +24,15 @@ MAX_SIZES_FOR_NUM_QUESTIONS = {
 }
 
 
-def create_database_if_not_exists(db_path):
-    """
-    Create SQLite database and table if they don't exist
-    Args:
-        db_path: Path to the SQLite database file
-    """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Create table with all required columns
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS benchmark_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            number_of_questions INTEGER,
-            degree_of_repetition TEXT,
-            eviction_base TEXT,
-            eviction_policy TEXT,
-            max_size INTEGER,
-            learning_rate REAL,
-            quality_weight REAL,
-            recency_weight REAL,
-            frequency_weight REAL,
-            hit_rate REAL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
 
-
-def save_result_to_db(db_path, result):
+def save_result_to_db(database_url, result):
     """
-    Save a single test result to the SQLite database
+    Save a single test result to the PostgreSQL database
     Args:
-        db_path: Path to the SQLite database file
+        database_url: PostgreSQL connection string
         result: Dictionary containing test results and configuration
     """
-    conn = sqlite3.connect(db_path)
+    conn = psycopg2.connect(database_url)
     cursor = conn.cursor()
     
     config_details = result.get('config_details', {})
@@ -95,7 +64,7 @@ def save_result_to_db(db_path, result):
         INSERT INTO benchmark_results (
             number_of_questions, degree_of_repetition, eviction_base, eviction_policy,
             max_size, learning_rate, quality_weight, recency_weight, frequency_weight, hit_rate
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ''', (
         number_of_questions, degree_of_repetition, eviction_base, eviction_policy,
         max_size, learning_rate, quality_weight, recency_weight, frequency_weight, hit_rate
@@ -215,16 +184,14 @@ def generate_test_configs():
 
 def main():
     """Main function to run all benchmark tests in parallel"""
-
+    # Get database URL from environment variable
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is required. Please set it before running the benchmark.")
+    
     print("Generating test configurations...")
     test_configs = generate_test_configs()
     print(f"Total test configurations: {len(test_configs)}")
-
-    # Create SQLite database
-    db_path = "/home/amitzarchi/Limodim/CacheLLM/new/GPTCache/benchmark_results.db"
-    print(f"Creating database at {db_path}...")
-    create_database_if_not_exists(db_path)
-
     # Use ProcessPoolExecutor for parallel execution
     max_workers = min(mp.cpu_count(), 4)  # Use up to 8 workers for better performance
     print(f"Running tests with {max_workers} parallel workers...")
@@ -253,7 +220,7 @@ def main():
                 max_size = result['max_size']
 
                 # Save result to database
-                save_result_to_db(db_path, result)
+                save_result_to_db(database_url, result)
 
                 completed += 1
                 print(f"Completed {completed}/{len(test_configs)} tests - {question_config_key}, max_size: {max_size}")
@@ -263,8 +230,6 @@ def main():
                 completed += 1
 
     print("Benchmark complete!")
-    print(f"Results saved to SQLite database: {db_path}")
-
 
 if __name__ == "__main__":
     main()
