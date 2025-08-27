@@ -45,8 +45,27 @@ class EvictionBase:
             return eviction_base
         if name == "quality_score":
             from gptcache.manager.eviction.quality_score import QualityScoreEviction
+            
+            # Only pass quality score parameters if they're not None
+            quality_params = {}
+            if 'learning_rate' in kwargs and kwargs['learning_rate'] is not None:
+                quality_params['learning_rate'] = kwargs['learning_rate']
+            if 'quality_weight' in kwargs and kwargs['quality_weight'] is not None:
+                quality_params['quality_weight'] = kwargs['quality_weight']
+            if 'recency_weight' in kwargs and kwargs['recency_weight'] is not None:
+                quality_params['recency_weight'] = kwargs['recency_weight']
+            if 'frequency_weight' in kwargs and kwargs['frequency_weight'] is not None:
+                quality_params['frequency_weight'] = kwargs['frequency_weight']
+            
+            # Get remaining kwargs excluding quality score parameters
+            other_params = {k: v for k, v in kwargs.items() if k not in ['learning_rate', 'quality_weight', 'recency_weight', 'frequency_weight']}
+            
             eviction_base = QualityScoreEviction(
-                maxsize=maxsize, clean_size=clean_size, on_evict=on_evict, **kwargs
+                maxsize=maxsize, 
+                clean_size=clean_size, 
+                on_evict=on_evict, 
+                **quality_params,
+                **other_params
             )
             return eviction_base
 

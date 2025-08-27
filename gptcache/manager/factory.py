@@ -16,7 +16,11 @@ def manager_factory(manager="map",
                     scalar_params=None,
                     vector_params=None,
                     object_params=None,
-                    eviction_params=None
+                    eviction_params=None,
+                    learning_rate: float = None,
+                    quality_weight: float = None,
+                    recency_weight: float = None,
+                    frequency_weight: float = None
                     ):
     """Factory of DataManager.
        By using this factory method, you only need to specify the root directory of the data,
@@ -46,6 +50,14 @@ def manager_factory(manager="map",
 
     :param eviction_params: Params of eviction.
     :type eviction_params:  dict
+    :param learning_rate: Learning rate for quality score eviction (0.0-1.0), defaults to None.
+    :type learning_rate: float
+    :param quality_weight: Weight for quality component in composite score, defaults to None.
+    :type quality_weight: float
+    :param recency_weight: Weight for recency component in composite score, defaults to None.
+    :type recency_weight: float
+    :param frequency_weight: Weight for frequency component in composite score, defaults to None.
+    :type frequency_weight: float
     :return: SSDataManager or MapDataManager.
 
     Example:
@@ -122,11 +134,29 @@ def manager_factory(manager="map",
         return get_data_manager(s, v, o, None,
                                 eviction_params.get("max_size", 1000),
                                 eviction_params.get("clean_size", None),
-                                eviction_params.get("eviction", "LRU"),)
+                                eviction_params.get("eviction", "LRU"),
+                                )
 
+    # Add quality score parameters to eviction_params if using quality_score eviction
+    if eviction_manager == "quality_score":
+        eviction_params = eviction_params or {}
+        if learning_rate is not None:
+            eviction_params['learning_rate'] = learning_rate
+        if quality_weight is not None:
+            eviction_params['quality_weight'] = quality_weight
+        if recency_weight is not None:
+            eviction_params['recency_weight'] = recency_weight
+        if frequency_weight is not None:
+            eviction_params['frequency_weight'] = frequency_weight
+    
+    # Filter out parameters that we're passing explicitly to avoid conflicts
+    filtered_params = {k: v for k, v in eviction_params.items() if k not in ['max_size', 'clean_size']}
+    
     e = EvictionBase(
         name=eviction_manager,
-        **eviction_params
+        maxsize=eviction_params.get('max_size', 1000),
+        clean_size=eviction_params.get('clean_size', None),
+        **filtered_params
     )
     return get_data_manager(s, v, o, e)
 
@@ -141,6 +171,10 @@ def get_data_manager(
         eviction: str = "LRU",
         data_path: str = "data_map.txt",
         get_data_container: Callable = None,
+        learning_rate: float = None,
+        quality_weight: float = None,
+        recency_weight: float = None,
+        frequency_weight: float = None,
 ):
     """Generate `SSDataManager` (with `cache_base`, `vector_base`, `max_size`, `clean_size` and `eviction` params),
        or `MAPDataManager` (with `data_path`, `max_size` and `get_data_container` params) to manager the data.
@@ -168,7 +202,14 @@ def get_data_manager(
     :type data_path:  str
     :param get_data_container: a Callable to get the data container, defaults to None.
     :type get_data_container:  Callable
-
+    :param learning_rate: Learning rate for quality score eviction (0.0-1.0), defaults to None.
+    :type learning_rate: float
+    :param quality_weight: Weight for quality component in composite score, defaults to None.
+    :type quality_weight: float
+    :param recency_weight: Weight for recency component in composite score, defaults to None.
+    :type recency_weight: float
+    :param frequency_weight: Weight for frequency component in composite score, defaults to None.
+    :type frequency_weight: float
 
     :return: SSDataManager or MapDataManager.
 
@@ -200,7 +241,29 @@ def get_data_manager(
         vector_base = VectorBase(name=vector_base)
     if isinstance(object_base, str):
         object_base = ObjectBase(name=object_base)
-    if isinstance(eviction_base, str) and eviction_base != "memory":
-        eviction_base = EvictionBase(name=eviction_base)
+    if isinstance(eviction_base, str):
+        if eviction_base == "memory":
+            # Set to None so SSDataManager creates memory eviction internally
+            eviction_base = None
+        elif eviction_base == "quality_score":
+            # Pass quality score parameters if using quality_score eviction
+            quality_params = {}
+            if learning_rate is not None:
+                quality_params['learning_rate'] = learning_rate
+            if quality_weight is not None:
+                quality_params['quality_weight'] = quality_weight
+            if recency_weight is not None:
+                quality_params['recency_weight'] = recency_weight
+            if frequency_weight is not None:
+                quality_params['frequency_weight'] = frequency_weight
+                
+            eviction_base = EvictionBase(
+                name="quality_score",
+                maxsize=max_size,
+                clean_size=clean_size,
+                **quality_params
+            )
+        else:
+            eviction_base = EvictionBase(name=eviction_base, maxsize=max_size, clean_size=clean_size)
     assert cache_base and vector_base
     return SSDataManager(cache_base, vector_base, object_base, eviction_base, max_size, clean_size, eviction)
