@@ -2,11 +2,12 @@ import sqlite3
 import random
 from typing import List, Dict, Literal
 from pathlib import Path
+import os
 
 def sample_questions(
     degree_of_repetition: Literal['HIGH', 'LOW', 'MIXED'],
     number_of_questions: int,
-    db_path: str = "paraphrased_questions.db"
+    db_path: str = os.path.join(os.path.dirname(__file__), "paraphrased_questions.db")
 ) -> List[Dict[str, any]]:
     """
     Sample questions from the paraphrased questions database based on degree of repetition.
