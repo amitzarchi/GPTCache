@@ -1,3 +1,7 @@
 numpy
 cachetools
 requests
+transformers
+onnxruntime
+huggingface-hub
+torch
