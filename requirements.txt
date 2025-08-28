@@ -5,3 +5,4 @@ transformers
 onnxruntime
 huggingface-hub
 torch
+psycopg2-binary
