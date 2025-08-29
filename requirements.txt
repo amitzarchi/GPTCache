@@ -6,3 +6,5 @@ onnxruntime
 huggingface-hub
 torch
 psycopg2-binary
+pytest
+psutil
