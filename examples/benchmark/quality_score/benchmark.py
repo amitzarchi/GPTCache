@@ -1,19 +1,17 @@
 import os
 import uuid
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import csv
+import threading
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from test import test
 from question_sampler import sample_questions
 
-# Test configurations
-QUESTION_CONFIGS = [ 
+QUESTION_CONFIGS = [
     ('HIGH', 500), ('HIGH', 1000), ('HIGH', 3000),
     ('LOW', 500), ('LOW', 1000), ('LOW', 3000),
     ('MIXED', 500), ('MIXED', 1000), ('MIXED', 3000),
 ]
-
 QUALITY_WEIGHTS = [(0.6, 0.3, 0.1), (0.8, 0.1, 0.1)]
 LEARNING_RATES = [0.3, 0.5, 0.7]
 MEMORY_POLICIES = ['LRU', 'LFU', 'FIFO', 'RR']
@@ -23,121 +21,140 @@ MAX_SIZES_FOR_NUM_QUESTIONS = {
     3000: [30, 150, 300],
 }
 
+CSV_HEADERS = [
+    'number_of_questions', 'degree_of_repetition', 'eviction_base', 'eviction_policy',
+    'max_size', 'learning_rate', 'quality_weight', 'recency_weight', 'frequency_weight',
+    'hit_rate', 'requests_per_second', 'average_cpu_usage'
+]
+
+csv_lock = threading.Lock()
 
 
-def save_result_to_db(database_url, result):
-    """
-    Save a single test result to the PostgreSQL database
-    Args:
-        database_url: PostgreSQL connection string
-        result: Dictionary containing test results and configuration
-    """
-    conn = psycopg2.connect(database_url)
-    cursor = conn.cursor()
-    
+def extract_result_data(result):
+    """Extract and format data from test result"""
     config_details = result.get('config_details', {})
     
-    # Extract values, handling both quality_score and memory eviction cases
-    number_of_questions = config_details.get('num_questions')
-    degree_of_repetition = config_details.get('degree_of_repetition')
-    eviction_base = result.get('eviction_base', 'memory')  # Default to memory if not specified
+    eviction_base = result.get('eviction_base', 'memory')
+    eviction_policy = ('quality_score' if eviction_base == 'quality_score' 
+                      else config_details.get('memory_policy') or result.get('policy'))
     
-    # For eviction_policy, use the policy from result or memory_policy from config
-    if eviction_base == 'quality_score':
-        eviction_policy = 'quality_score'
-    else:
-        eviction_policy = config_details.get('memory_policy') or result.get('policy')
-    
-    max_size = result.get('max_size')
-    learning_rate = config_details.get('learning_rate')
-    
-    # Quality weights
     quality_weights = config_details.get('quality_weights')
-    if quality_weights:
-        quality_weight, recency_weight, frequency_weight = quality_weights
-    else:
-        quality_weight = recency_weight = frequency_weight = None
+    quality_weight, recency_weight, frequency_weight = (quality_weights if quality_weights 
+                                                       else (None, None, None))
     
-    hit_rate = result.get('cache_hit_rate')
+    throughput = result.get('throughput', {})
+    cpu_metrics = result.get('cpu_metrics', {})
     
-    cursor.execute('''
-        INSERT INTO benchmark_results (
-            number_of_questions, degree_of_repetition, eviction_base, eviction_policy,
-            max_size, learning_rate, quality_weight, recency_weight, frequency_weight, hit_rate
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    ''', (
-        number_of_questions, degree_of_repetition, eviction_base, eviction_policy,
-        max_size, learning_rate, quality_weight, recency_weight, frequency_weight, hit_rate
-    ))
+    return [
+        config_details.get('num_questions'),
+        config_details.get('degree_of_repetition'),
+        eviction_base,
+        eviction_policy,
+        result.get('max_size'),
+        config_details.get('learning_rate'),
+        quality_weight,
+        recency_weight,
+        frequency_weight,
+        result.get('cache_hit_rate'),
+        throughput.get('requests_per_second'),
+        cpu_metrics.get('average_cpu_usage')
+    ]
+
+
+def save_result_to_csv(csv_file_path, result):
+    """Save test result to CSV file with thread safety"""
+    row_data = extract_result_data(result)
     
-    conn.commit()
-    conn.close()
+    with csv_lock:
+        file_exists = os.path.exists(csv_file_path)
+        
+        with open(csv_file_path, 'a', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            if not file_exists:
+                writer.writerow(CSV_HEADERS)
+            
+            writer.writerow(row_data)
+
+
+def create_file_extension(degree_of_repetition, num_questions, max_size, test_type, unique_id):
+    """Create unique file extension for test data"""
+    return f"{degree_of_repetition.lower()}_{num_questions}_{max_size}_{test_type}_{unique_id}"
+
+
+def run_quality_score_test(questions, max_size, quality_weights, learning_rate, file_extension):
+    """Run quality score eviction test"""
+    quality_weight, recency_weight, frequency_weight = quality_weights
+    return test(
+        questions=questions,
+        max_size=max_size,
+        eviction_base='quality_score',
+        learning_rate=learning_rate,
+        quality_weight=quality_weight,
+        recency_weight=recency_weight,
+        frequency_weight=frequency_weight,
+        file_extension=file_extension
+    )
+
+
+def run_memory_test(questions, max_size, memory_policy, file_extension):
+    """Run memory eviction test"""
+    return test(
+        questions=questions,
+        max_size=max_size,
+        eviction_base='memory',
+        policy=memory_policy,
+        file_extension=file_extension
+    )
 
 
 def run_single_test(config):
-    """
-    Run a single test configuration
-    Args:
-        config: tuple containing (question_config, max_size, quality_weights, learning_rate, memory_policy)
-    Returns:
-        dict: test results with configuration info
-    """
+    """Run a single test configuration"""
     question_config, max_size, quality_weights, learning_rate, memory_policy = config
-
+    degree_of_repetition, num_questions = question_config
+    
     try:
-        # Sample questions for this configuration
-        degree_of_repetition, num_questions = question_config
         questions = sample_questions(degree_of_repetition, num_questions)
-        unique_file_extension_id = str(uuid.uuid4())
-
-        # Determine if this is a quality_score or memory test
+        unique_id = str(uuid.uuid4())
+        
         if quality_weights and learning_rate:
-            # Quality score eviction test
+            file_extension = create_file_extension(
+                degree_of_repetition, num_questions, max_size, 
+                f"qs_{learning_rate}", unique_id
+            )
+            result = run_quality_score_test(questions, max_size, quality_weights, learning_rate, file_extension)
             eviction_base = 'quality_score'
-            quality_weight, recency_weight, frequency_weight = quality_weights
-            result = test(
-                questions=questions,
-                max_size=max_size,
-                eviction_base=eviction_base,
-                learning_rate=learning_rate,
-                quality_weight=quality_weight,
-                recency_weight=recency_weight,
-                frequency_weight=frequency_weight,
-                file_extension=f"{degree_of_repetition.lower()}_{num_questions}_{max_size}_qs_{learning_rate}_{unique_file_extension_id}"
-            )
         else:
-            # Memory eviction test
-            eviction_base = 'memory'
-            result = test(
-                questions=questions,
-                max_size=max_size,
-                eviction_base=eviction_base,
-                policy=memory_policy,
-                file_extension=f"{degree_of_repetition.lower()}_{num_questions}_{max_size}_{memory_policy.lower()}_{unique_file_extension_id}"
+            file_extension = create_file_extension(
+                degree_of_repetition, num_questions, max_size, 
+                memory_policy.lower(), unique_id
             )
-
-        # Add configuration info to result
-        result['question_config'] = f"{degree_of_repetition}_{num_questions}"
-        result['max_size'] = max_size
-        result['eviction_base'] = eviction_base
-        result['config_details'] = {
-            'degree_of_repetition': degree_of_repetition,
-            'num_questions': num_questions,
-            'quality_weights': quality_weights,
-            'learning_rate': learning_rate,
-            'memory_policy': memory_policy
-        }
-
+            result = run_memory_test(questions, max_size, memory_policy, file_extension)
+            eviction_base = 'memory'
+        
+        result.update({
+            'question_config': f"{degree_of_repetition}_{num_questions}",
+            'max_size': max_size,
+            'eviction_base': eviction_base,
+            'config_details': {
+                'degree_of_repetition': degree_of_repetition,
+                'num_questions': num_questions,
+                'quality_weights': quality_weights,
+                'learning_rate': learning_rate,
+                'memory_policy': memory_policy
+            }
+        })
+        
         return result
-
+        
     except Exception as e:
         return {
             'error': str(e),
-            'question_config': f"{question_config[0]}_{question_config[1]}",
+            'question_config': f"{degree_of_repetition}_{num_questions}",
             'max_size': max_size,
             'config_details': {
-                'degree_of_repetition': question_config[0],
-                'num_questions': question_config[1],
+                'degree_of_repetition': degree_of_repetition,
+                'num_questions': num_questions,
                 'quality_weights': quality_weights,
                 'learning_rate': learning_rate,
                 'memory_policy': memory_policy
@@ -146,91 +163,76 @@ def run_single_test(config):
 
 
 def generate_test_configs():
-    """
-    Generate all test configurations
-    Returns:
-        list: List of tuples containing all parameter combinations
-    """
-    test_configs = []
-
+    """Generate all test configurations"""
+    configs = []
+    
     for question_config in QUESTION_CONFIGS:
         degree_of_repetition, num_questions = question_config
         max_sizes = MAX_SIZES_FOR_NUM_QUESTIONS[num_questions]
-
+        
         for max_size in max_sizes:
-            # Quality score configurations
             for quality_weights in QUALITY_WEIGHTS:
                 for learning_rate in LEARNING_RATES:
-                    test_configs.append((
-                        question_config,
-                        max_size,
-                        quality_weights,
-                        learning_rate,
-                        None  # memory_policy not used for quality_score
-                    ))
-
-            # Memory policy configurations
+                    configs.append((question_config, max_size, quality_weights, learning_rate, None))
+            
             for memory_policy in MEMORY_POLICIES:
-                test_configs.append((
-                    question_config,
-                    max_size,
-                    None,  # quality_weights not used for memory
-                    None,  # learning_rate not used for memory
-                    memory_policy
-                ))
-
-    return test_configs
-
-
-def main():
-    """Main function to run all benchmark tests in parallel"""
-    # Get database URL from environment variable
-    database_url = os.getenv('DATABASE_URL')
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable is required. Please set it before running the benchmark.")
+                configs.append((question_config, max_size, None, None, memory_policy))
     
-    print("Generating test configurations...")
-    test_configs = generate_test_configs()
-    print(f"Total test configurations: {len(test_configs)}")
-    # Use ProcessPoolExecutor for parallel execution
-    max_workers = min(mp.cpu_count(), 4)  # Use up to 8 workers for better performance
-    print(f"Running tests with {max_workers} parallel workers...")
+    return configs
 
+
+def setup_csv_file(csv_file_path):
+    """Setup CSV file for results"""
+    if os.path.exists(csv_file_path):
+        os.remove(csv_file_path)
+        print("Removed existing results file")
+    print(f"Results will be saved to: {csv_file_path}")
+
+
+def run_benchmark_tests(test_configs, csv_file_path):
+    """Run all benchmark tests in parallel"""
+    max_workers = min(mp.cpu_count(), 4)
+    print(f"Running tests with {max_workers} parallel workers...")
+    
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all test configurations
         future_to_config = {
             executor.submit(run_single_test, config): config
             for config in test_configs
         }
-
-        # Process results as they complete
+        
         completed = 0
         for future in as_completed(future_to_config):
-            config = future_to_config[future]
             try:
                 result = future.result()
                 
-                # Skip if there was an error
                 if 'error' in result:
                     print(f"Test failed: {result['error']}")
-                    completed += 1
-                    continue
+                else:
+                    save_result_to_csv(csv_file_path, result)
+                    question_config_key = result['question_config']
+                    max_size = result['max_size']
+                    print(f"Completed {completed + 1}/{len(test_configs)} tests - {question_config_key}, max_size: {max_size}")
                 
-                question_config_key = result['question_config']
-                max_size = result['max_size']
-
-                # Save result to database
-                save_result_to_db(database_url, result)
-
                 completed += 1
-                print(f"Completed {completed}/{len(test_configs)} tests - {question_config_key}, max_size: {max_size}")
-
+                
             except Exception as e:
                 print(f"Test failed: {e}")
                 completed += 1
 
-    print("Benchmark complete!")
+
+def main():
+    """Main function to run all benchmark tests"""
+    csv_file_path = os.path.join(os.path.dirname(__file__), "benchmark_results.csv")
+    
+    setup_csv_file(csv_file_path)
+    
+    test_configs = generate_test_configs()
+    print(f"Total test configurations: {len(test_configs)}")
+    
+    run_benchmark_tests(test_configs, csv_file_path)
+    
+    print(f"Benchmark complete! Results saved to: {csv_file_path}")
+
 
 if __name__ == "__main__":
     main()
-
