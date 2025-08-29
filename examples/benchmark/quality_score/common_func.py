@@ -1,6 +1,8 @@
 """" Methods of processing data """
 import os
 import time
+import psutil
+import threading
 
 
 def remove_data_files(file_extension, file_path):
@@ -58,3 +60,40 @@ def mock_chat_completion(*args, **kwargs):
         "usage": {"completion_tokens": 0, "prompt_tokens": 0, "total_tokens": 0},
         "object": "chat.completion",
     }
+
+
+class CPUMonitor:
+    """Monitor CPU usage during a specific operation"""
+    def __init__(self, interval=0.01):
+        self.interval = interval
+        self.cpu_readings = []
+        self.monitoring = False
+        self._thread = None
+    
+    def start_monitoring(self):
+        """Start CPU monitoring in a separate thread"""
+        self.monitoring = True
+        self.cpu_readings = []
+        self._thread = threading.Thread(target=self._monitor_cpu)
+        self._thread.start()
+    
+    def stop_monitoring(self):
+        """Stop CPU monitoring and return average CPU usage"""
+        self.monitoring = False
+        if self._thread:
+            self._thread.join()
+        
+        if self.cpu_readings:
+            return sum(self.cpu_readings) / len(self.cpu_readings)
+        return 0.0
+    
+    def _monitor_cpu(self):
+        """Internal method to continuously monitor CPU usage"""
+        while self.monitoring:
+            try:
+                cpu_percent = psutil.cpu_percent(interval=None)
+                self.cpu_readings.append(cpu_percent)
+                time.sleep(self.interval)
+            except Exception:
+                # If there's an error reading CPU, just continue
+                pass
