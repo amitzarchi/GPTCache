@@ -110,6 +110,7 @@ GPTCache/
 ├── examples/
 │   └── benchmark/
 │       └── quality_score/  # Benchmark implementation
+│            └── benchmark_results.json  # test results 
 ├── requirements.txt    # Python dependencies
 ├── setup.py           # Package installation
 └── README.md          # This file
